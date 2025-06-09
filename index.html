@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lam: PC Diagnostician</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1e40af">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <style>
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes growPath {
+            from { stroke-dashoffset: 100; opacity: 0; }
+            to { stroke-dashoffset: 0; opacity: 1; }
+        }
+        .animate-slide-in { animation: slideIn 0.3s ease-out; }
+        .animate-grow-path { animation: growPath 1s ease-out forwards; }
+        [dir="rtl"] .text-left { text-align: right; }
+        [dir="rtl"] .flex-row { flex-direction: row-reverse; }
+        .micro-interaction {
+            transition: transform 0.2s ease, background-color 0.2s ease;
+        }
+        .micro-interaction:hover {
+            transform: scale(1.05);
+            background-color: #2563eb;
+        }
+        .timeline-dot {
+            width: 12px;
+            height: 12px;
+            background-color: #3b82f6;
+            border-radius: 50%;
+            position: absolute;
+            left: -6px;
+            top: 50%;
+            transform: translateY(-50%);
+            transition: background-color 0.3s;
+        }
+        .timeline-item {
+            border-left: 3px solid #3b82f6;
+            padding-left: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+        }
+        .timeline-item.pivot { border-left-color: #ef4444; }
+        .timeline-item.pivot .timeline-dot { background-color: #ef4444; }
+        .tooltip {
+            position: absolute;
+            background: #1f2937;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 50;
+        }
+        .tooltip.show { opacity: 1; }
+        .glassmorphism {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .zen-mode .container { max-width: 800px; }
+        .zen-mode .bg-white { background: transparent; }
+        .zen-mode .shadow-lg { box-shadow: none; }
+        .zen-mode .dark:bg-gray-800 { background: transparent; }
+        .heatmap {
+            transition: background-color 0.5s ease;
+        }
+        .dev-console {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #1f2937;
+            color: #fff;
+            padding: 16px;
+            max-height: 50vh;
+            overflow-y: auto;
+            z-index: 100;
+        }
+        .logic-tree {
+            stroke: #3b82f6;
+            stroke-width: 2;
+            fill: none;
+            stroke-dasharray: 100;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen flex items-center justify-center transition-colors duration-300" dir="ltr">
+    <div class="container mx-auto p-4 sm:p-6 max-w-4xl">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 sm:p-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h1 class="text-2xl font-bold">Lam: PC Diagnostician</h1>
+                <div class="flex flex-wrap gap-3">
+                    <select id="personaSelect" class="p-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 micro-interaction">
+                        <option value="all">All Personas</option>
+                        <option value="hardware">Hardware Hermit</option>
+                        <option value="os">OS Oracle</option>
+                        <option value="network">Network Ninja</option>
+                        <option value="forensics">Forensics Falcon</option>
+                    </select>
+                    <button id="themeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 micro-interaction">
+                        <span class="dark:hidden">🌙</span>
+                        <span class="hidden dark:block">☀️</span>
+                    </button>
+                    <button id="rtlToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 micro-interaction">RTL</button>
+                    <button id="zenModeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 micro-interaction">Zen</button>
+                    <button id="sandboxModeToggle" class="p-2 rounded-full bg-gray-200 dark:bg-gray-700 micro-interaction">Sandbox</button>
+                </div>
+            </div>
+            <div id="deviceStatus" class="mb-6 hidden">
+                <h3 class="text-sm font-semibold mb-3">Device Insights</h3>
+                <p id="deviceInfo" class="text-sm text-gray-600 dark:text-gray-400"></p>
+            </div>
+            <div id="timelineContainer" class="mb-6">
+                <h3 class="text-sm font-semibold mb-3">Diagnostic Timeline</h3>
+                <div id="timeline" class="relative"></div>
+            </div>
+            <div id="logicTreeContainer" class="mb-6 hidden zen-mode">
+                <h3 class="text-sm font-semibold mb-3">Logic Path Visualization</h3>
+                <svg id="logicTree" class="w-full h-48"></svg>
+            </div>
+            <div id="questionContainer" class="mb-6 animate-slide-in">
+                <p id="questionText" class="text-lg mb-3"></p>
+                <p id="reasoningText" class="text-sm text-gray-600 dark:text-gray-400 mb-4"></p>
+                <div id="hypothesisContainer" class="mb-4 hidden">
+                    <h4 class="text-sm font-semibold">Hypotheses</h4>
+                    <ul id="hypothesisList" class="text-sm text-gray-600 dark:text-gray-400 list-disc pl-5"></ul>
+                </div>
+                <div id="optionsContainer" class="space-y-3"></div>
+                <div id="clarificationContainer" class="hidden mt-4">
+                    <p id="clarificationText" class="text-sm mb-2"></p>
+                    <input id="clarificationInput" class="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600" placeholder="Describe the issue (e.g., 'it crashes randomly')">
+                    <button id="submitClarification" class="mt-3 px-4 py-2 bg-blue-600 text-white rounded micro-interaction">Submit</button>
+                </div>
+            </div>
+            <div id="metaModeContainer" class="hidden mb-6">
+                <h3 class="text-sm font-semibold mb-3">Meta-Mode: Reasoning & Persona Debate</h3>
+                <p id="metaReasoning" class="text-sm text-gray-600 dark:text-gray-400"></p>
+            </div>
+            <div id="whatIfContainer" class="mb-6">
+                <h3 class="text-sm font-semibold mb-3">What-If Analysis</h3>
+                <div id="whatIfOptions" class="space-y-2"></div>
+            </div>
+            <div id="sandboxContainer" class="hidden mb-6">
+                <h3 class="text-sm font-semibold mb-3">Sandbox Mode</h3>
+                <p class="text-sm mb-2">Simulate PC faults to test Lam's diagnostics:</p>
+                <select id="sandboxFault" class="p-2 rounded bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 micro-interaction mb-2">
+                    <option value="">Select Fault</option>
+                    <option value="power_failure">Power Failure</option>
+                    <option value="thermal_issue">Thermal Issue</option>
+                    <option value="os_corruption">OS Corruption</option>
+                    <option value="ram_failure">RAM Failure</option>
+                    <option value="disk_failure">Disk Failure</option>
+                    <option value="gpu_issue">GPU Issue</option>
+                    <option value="network_issue">Network Issue</option>
+                    <option value="malware">Malware</option>
+                </select>
+                <button id="runSandbox" class="px-4 py-2 bg-blue-600 text-white rounded micro-interaction">Run Simulation</button>
+                <p id="sandboxResult" class="text-sm text-gray-600 dark:text-gray-400 mt-2"></p>
+            </div>
+            <div id="diagnosisContainer" class="hidden">
+                <h2 class="text-xl font-semibold mb-4">Diagnosis</h2>
+                <p id="diagnosisText" class="mb-4"></p>
+                <p id="diagnosisReasoning" class="text-sm text-gray-600 dark:text-gray-400 mb-4"></p>
+                <div class="flex items-center gap-3 mb-4">
+                    <label class="text-sm">Was this diagnosis correct?</label>
+                    <button id="confirmDiagnosis" class="px-3 py-1 bg-green-600 text-white rounded micro-interaction">Yes</button>
+                    <button id="rejectDiagnosis" class="px-3 py-1 bg-red-600 text-white rounded micro-interaction">No</button>
+                </div>
+                <div class="flex flex-wrap gap-3">
+                    <button id="exportButton" class="px-4 py-2 bg-green-600 text-white rounded micro-interaction">Export Session</button>
+                    <button id="restartButton" class="px-4 py-2 bg-blue-600 text-white rounded micro-interaction">Restart Diagnosis</button>
+                </div>
+            </div>
+            <div id="loader" class="hidden flex justify-center mt-4">
+                <div class="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+            </div>
+            <div id="tooltip" class="tooltip"></div>
+            <div id="devConsole" class="dev-console hidden"></div>
+        </div>
+    </div>
+
+   <script type="module">
+    // Intelligent Symptom Parser (ISP)
+    const ISP = {
+        patterns: {
+            random: /(randomly|sometimes|occasionally|intermittent)/i,
+            sudden: /(sudden|instant|abrupt|unexpected)/i,
+            slow: /(slow|laggy|sluggish|unresponsive)/i,
+            noise: /(clicking|grinding|whirring|buzzing)/i,
+            error: /(error|crash|blue screen|bsod|freeze)/i,
+            network: /(internet|wifi|connection|network|disconnected)/i,
+            malware: /(popups|ads|virus|malware|spyware)/i,
+            graphics: /(glitch|artifact|stutter|flicker|low fps)/i,
+            power: /(won\'t start|no power|shutdown|reboot)/i,
+            thermal: /(hot|overheat|fan loud|thermal)/i
+        },
+        symptomMap: {
+            random: ['random_crashes', 'intermittent_issue'],
+            sudden: ['sudden_shutdown'],
+            slow: ['slow_performance'],
+            noise: ['noise'],
+            error: ['blue_screen', 'crash'],
+            network: ['no_internet', 'slow_network'],
+            malware: ['popups'],
+            graphics: ['graphic_glitches', 'low_fps'],
+            power: ['no_power'],
+            thermal: ['overheating']
+        },
+        parse(input) {
+            const results = { symptoms: [], confidence: 0.6 };
+            for (const [category, regex] of Object.entries(this.patterns)) {
+                if (regex.test(input)) {
+                    results.symptoms.push(...this.symptomMap[category]);
+                    results.confidence = Math.min(results.confidence + 0.1, 0.9);
+                }
+            }
+            return results;
+        }
+    };
+
+    // Knowledge Base
+    const KnowledgeBase = {
+        issues: {
+            power_failure: { baseProbability: 0.2, symptoms: ['no_power', 'sudden_shutdown'], questions: ['q1', 'q2'], persona: 'hardware', solutions: ['Check PSU connections', 'Test with alternate power supply'] },
+            thermal_issue: { baseProbability: 0.15, symptoms: ['overheating', 'sudden_shutdown'], questions: ['q3', 'q4'], persona: 'hardware', solutions: ['Clean fans', 'Reapply thermal paste'] },
+            os_corruption: { baseProbability: 0.15, symptoms: ['blue_screen', 'slow_performance'], questions: ['q5', 'q6'], persona: 'os', solutions: ['Run SFC /scannow', 'Reinstall OS'] },
+            ram_failure: { baseProbability: 0.1, symptoms: ['blue_screen', 'random_crashes'], questions: ['q7', 'q8'], persona: 'hardware', solutions: ['Run MemTest86', 'Replace RAM module'] },
+            disk_failure: { baseProbability: 0.1, symptoms: ['slow_performance', 'data_loss'], questions: ['q9', 'q10'], persona: 'hardware', solutions: ['Run disk check', 'Replace HDD/SSD'] },
+            gpu_issue: { baseProbability: 0.1, symptoms: ['graphic_glitches', 'low_fps'], questions: ['q11', 'q12'], persona: 'hardware', solutions: ['Update GPU drivers', 'Check GPU seating'] },
+            network_issue: { baseProbability: 0.1, symptoms: ['no_internet', 'slow_network'], questions: ['q13', 'q14'], persona: 'network', solutions: ['Reset network adapter', 'Check router settings'] },
+            malware: { baseProbability: 0.1, symptoms: ['slow_performance', 'popups'], questions: ['q15', 'q16'], persona: 'forensics', solutions: ['Run antivirus scan', 'Boot in Safe Mode'] }
+        },
+        questions: {
+            q1: { text: "Does your PC fail to turn on at all?", reasoning: "Checks for complete power failure.", persona: 'hardware', options: { yes: { next: 'q2', updates: { power_failure: 0.4, thermal_issue: 0.05 }, confidence: 0.9 }, no: { next: 'q3', updates: { power_failure: 0.05, thermal_issue: 0.2 }, confidence: 0.8 }, sometimes: { clarification: 'q1_clarify', updates: { power_failure: 0.2 }, confidence: 0.6 } } },
+            q2: { text: "Hear beeps or see diagnostic lights?", reasoning: "Indicates POST issues.", persona: 'hardware', options: { yes: { next: 'q7', updates: { power_failure: 0.3, ram_failure: 0.2 }, confidence: 0.85 }, no: { next: null, updates: { power_failure: 0.5 }, confidence: 0.9 } } },
+            q3: { text: "Does your PC shut down during heavy tasks?", reasoning: "Suggests thermal or PSU issues.", persona: 'hardware', options: { yes: { next: 'q4', updates: { thermal_issue: 0.4, power_failure: 0.1 }, confidence: 0.9 }, no: { next: 'q5', updates: { thermal_issue: 0.05, os_corruption: 0.2 }, confidence: 0.8 }, sometimes: { clarification: 'q3_clarify', updates: { thermal_issue: 0.2 }, confidence: 0.6 } } },
+            q4: { text: "Fan noise: quiet or loud?", reasoning: "Checks cooling system.", persona: 'hardware', options: { loud: { next: null, updates: { thermal_issue: 0.6 }, confidence: 0.95 }, quiet: { next: 'q5', updates: { thermal_issue: 0.2, power_failure: 0.2 }, confidence: 0.7 } } },
+            q5: { text: "See blue screen errors?", reasoning: "Suggests OS or hardware faults.", persona: 'os', options: { yes: { next: 'q6', updates: { os_corruption: 0.4, ram_failure: 0.2 }, confidence: 0.9 }, no: { next: 'q9', updates: { os_corruption: 0.05, disk_failure: 0.2 }, confidence: 0.8 } } },
+            q6: { text: "Blue screen mentions drivers?", reasoning: "Points to OS corruption.", persona: 'os', options: { yes: { next: null, updates: { os_corruption: 0.6 }, confidence: 0.95 }, no: { next: 'q7', updates: { os_corruption: 0.2, ram_failure: 0.3 }, confidence: 0.8 } } },
+            q7: { text: "Random freezes or crashes?", reasoning: "Suggests RAM issues.", persona: 'hardware', options: { yes: { next: 'q8', updates: { ram_failure: 0.4, os_corruption: 0.1 }, confidence: 0.9 }, no: { next: 'q11', updates: { ram_failure: 0.05, gpu_issue: 0.2 }, confidence: 0.8 } } },
+            q8: { text: "MemTest86 shows errors?", reasoning: "Confirms RAM issues.", persona: 'hardware', options: { yes: { next: null, updates: { ram_failure: 0.6 }, confidence: 0.95 }, no: { next: 'q9', updates: { ram_failure: 0.2, disk_failure: 0.2 }, confidence: 0.7 } } },
+            q9: { text: "Slow to boot or access files?", reasoning: "Disk or malware issues.", persona: 'hardware', options: { yes: { next: 'q10', updates: { disk_failure: 0.3, malware: 0.2 }, confidence: 0.9 }, no: { next: 'q13', updates: { disk_failure: 0.05, network_issue: 0.2 }, confidence: 0.8 } } },
+            q10: { text: "Hear clicking from HDD?", reasoning: "Mechanical disk failure.", persona: 'hardware', options: { yes: { next: null, updates: { disk_failure: 0.6 }, confidence: 0.95 }, no: { next: 'q15', updates: { disk_failure: 0.2, malware: 0.3 }, confidence: 0.7 } } },
+            q11: { text: "Graphical glitches in games?", reasoning: "GPU issues.", persona: 'hardware', options: { yes: { next: 'q12', updates: { gpu_issue: 0.4 }, confidence: 0.9 }, no: { next: 'q13', updates: { gpu_issue: 0.05, network_issue: 0.2 }, confidence: 0.8 } } },
+            q12: { text: "Updated GPU drivers recently?", reasoning: "Driver conflicts.", persona: 'hardware', options: { yes: { next: null, updates: { gpu_issue: 0.5 }, confidence: 0.9 }, no: { next: null, updates: { gpu_issue: 0.6 }, confidence: 0.95 } } },
+            q13: { text: "Internet connectivity issues?", reasoning: "Network problems.", persona: 'network', options: { yes: { next: 'q14', updates: { network_issue: 0.4 }, confidence: 0.9 }, no: { next: 'q15', updates: { network_issue: 0.05, malware: 0.2 }, confidence: 0.8 } } },
+            q14: { text: "Router restart fixes issue?", reasoning: "Router vs. PC issue.", persona: 'network', options: { yes: { next: null, updates: { network_issue: 0.2 }, confidence: 0.7 }, no: { next: null, updates: { network_issue: 0.5 }, confidence: 0.9 } } },
+            q15: { text: "Pop-ups or odd browser behavior?", reasoning: "Malware signs.", persona: 'forensics', options: { yes: { next: 'q16', updates: { malware: 0.4 }, confidence: 0.9 }, no: { next: null, updates: { malware: 0.05 }, confidence: 0.8 } } },
+            q16: { text: "Unexpected processes in Task Manager?", reasoning: "Malware indicator.", persona: 'forensics', options: { yes: { next: null, updates: { malware: 0.6 }, confidence: 0.95 }, no: { next: null, updates: { malware: 0.3 }, confidence: 0.7 } } }
+        }
+    };
+
+    // Cognitive Diagnostic Engine
+    class CDE {
+        constructor() {
+            this.state = {
+                probabilities: Object.fromEntries(Object.entries(KnowledgeBase.issues).map(([k, v]) => [k, v.baseProbability])),
+                history: [],
+                currentQuestion: 'q1',
+                currentPersona: 'all',
+                confidenceThreshold: 0.85,
+                learningRate: 0.05,
+                trainingMode: false,
+                sandboxMode: false,
+                hypotheses: []
+            };
+            this.cache = new Map();
+        }
+
+        reset() {
+            try {
+                localStorage.removeItem('diagnosticHistory');
+                this.state = {
+                    ...this.state,
+                    probabilities: Object.fromEntries(Object.entries(KnowledgeBase.issues).map(([k, v]) => [k, v.baseProbability])),
+                    history: [],
+                    currentQuestion: 'q1',
+                    hypotheses: []
+                };
+                this.saveHistory();
+                this.pruneDecisionTree();
+            } catch (e) {
+                console.error('Reset error:', e);
+            }
+        }
+
+        initialize() {
+            try {
+                this.loadHistory();
+                this.reset();
+            } catch (e) {
+                console.error('Initialize error:', e);
+            }
+        }
+
+        loadHistory() {
+            try {
+                const history = localStorage.getItem('diagnosticHistory');
+                if (history) {
+                    this.state.history = JSON.parse(history);
+                    this.applyLearning();
+                }
+            } catch (e) {
+                console.error('Load history error:', e);
+            }
+        }
+
+        saveHistory() {
+            try {
+                localStorage.setItem('diagnosticHistory', JSON.stringify(this.state.history));
+            } catch (e) {
+                console.error('Save history error:', e);
+            }
+        }
+
+        applyLearning() {
+            try {
+                const successfulDiagnoses = this.state.history.filter(h => h.probabilities && Object.values(h.probabilities).some(p => p > 0.7));
+                successfulDiagnoses.forEach(h => {
+                    for (const [issue, prob] of Object.entries(h.probabilities)) {
+                        if (prob > 0.7) {
+                            KnowledgeBase.issues[issue].baseProbability += this.state.learningRate * (prob - KnowledgeBase.issues[issue].baseProbability);
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Apply learning error:', e);
+            }
+        }
+
+        updateProbabilities(updates, confidence) {
+            try {
+                let total = 0;
+                for (const issue in this.state.probabilities) {
+                    this.state.probabilities[issue] = (updates[issue] || this.state.probabilities[issue]) * (0.9 * confidence);
+                    total += this.state.probabilities[issue];
+                }
+                for (const issue in this.state.probabilities) {
+                    this.state.probabilities[issue] /= total;
+                }
+                this.crossValidate();
+                this.generateHypotheses();
+                this.cache.set(JSON.stringify(updates), { ...this.state.probabilities });
+            } catch (e) {
+                console.error('Update probabilities error:', e);
+            }
+        }
+
+        crossValidate() {
+            try {
+                const symptoms = this.state.history.flatMap(h => h.symptoms || []);
+                const compoundIssues = [];
+                for (const issue in KnowledgeBase.issues) {
+                    const issueSymptoms = KnowledgeBase.issues[issue].symptoms;
+                    const matchCount = symptoms.filter(s => issueSymptoms.includes(s)).length;
+                    if (matchCount > 1) {
+                        this.state.probabilities[issue] *= 1.2;
+                        compoundIssues.push(issue);
+                    }
+                }
+                if (compoundIssues.length > 1) {
+                    compoundIssues.forEach(issue => this.state.probabilities[issue] *= 1.1);
+                }
+                const total = Object.values(this.state.probabilities).reduce((sum, p) => sum + p, 0);
+                for (const issue in this.state.probabilities) {
+                    this.state.probabilities[issue] /= total;
+                }
+            } catch (e) {
+                console.error('Cross validate error:', e);
+            }
+        }
+
+        selectNextQuestion() {
+            try {
+                if (this.state.currentPersona === 'all') {
+                    const personaResults = ['hardware', 'os', 'network', 'forensics'].map(persona => {
+                        const questions = Object.keys(KnowledgeBase.questions)
+                            .filter(q => !this.state.history.some(h => h.questionId === q) && KnowledgeBase.questions[q].persona === persona);
+                        return questions.length ? questions.reduce((a, b) => {
+                            const aScore = KnowledgeBase.questions[a].options ? Object.values(KnowledgeBase.questions[a].options).reduce((sum, o) => sum + (o.confidence || 0), 0) : 0;
+                            const bScore = KnowledgeBase.questions[b].options ? Object.values(KnowledgeBase.questions[b].options).reduce((sum, o) => sum + (o.confidence || 0), 0) : 0;
+                            return aScore > bScore ? a : b;
+                        }) : null;
+                    }).filter(q => q);
+                    return personaResults.length ? personaResults[Math.floor(Math.random() * personaResults.length)] : null;
+                }
+                const unansweredQuestions = Object.keys(KnowledgeBase.questions)
+                    .filter(q => !this.state.history.some(h => h.questionId === q) && KnowledgeBase.questions[q].persona === this.state.currentPersona);
+                return unansweredQuestions.length ? unansweredQuestions.reduce((a, b) => {
+                    const aScore = KnowledgeBase.questions[a].options ? Object.values(KnowledgeBase.questions[a].options).reduce((sum, o) => sum + (o.confidence || 0), 0) : 0;
+                    const bScore = KnowledgeBase.questions[b].options ? Object.values(KnowledgeBase.questions[b].options).reduce((sum, o) => sum + (o.confidence || 0), 0) : 0;
+                    return aScore > bScore ? a : b;
+                }) : null;
+            } catch (e) {
+                console.error('Select next question error:', e);
+                return null;
+            }
+        }
+
+        parseFuzzyInput(input, questionId) {
+            try {
+                const q = KnowledgeBase.questions[questionId];
+                if (q.parse) {
+                    return q.parse(input);
+                }
+                const { symptoms, confidence } = ISP.parse(input);
+                const updates = {};
+                for (const symptom of symptoms) {
+                    const relatedIssue = Object.keys(KnowledgeBase.issues).find(issue =>
+                        KnowledgeBase.issues[issue].symptoms.includes(symptom));
+                    if (relatedIssue) updates[relatedIssue] = confidence;
+                }
+                return { next: this.selectNextQuestion(), updates, confidence };
+            } catch (e) {
+                console.error('Parse fuzzy input error:', e);
+                return { next: null, updates: {}, confidence: 0.7 };
+            }
+        }
+
+        generateHypotheses() {
+            try {
+                this.state.hypotheses = Object.entries(this.state.probabilities)
+                    .filter(([_, prob]) => prob > 0.2)
+                    .map(([issue, prob]) => ({
+                        issue: issue.replace('_', ' '),
+                        probability: (prob * 100).toFixed(1),
+                        implications: KnowledgeBase.issues[issue].symptoms.map(s => `Possible ${s.replace('_', ' ')}`)
+                    }));
+            } catch (e) {
+                console.error('Generate hypotheses error:', e);
+            }
+        }
+
+        getDiagnosis() {
+            try {
+                return Object.entries(this.state.probabilities)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 2)
+                    .filter(([_, prob]) => prob > 0.2)
+                    .map(([issue, prob]) => ({
+                        issue: issue.replace('_', ' '),
+                        probability: (prob * 100).toFixed(1),
+                        reasoning: `Based on symptoms: ${this.state.history.map(h => `${h.question}: ${h.answer}`).join('; ')}.`,
+                        solutions: KnowledgeBase.issues[issue].solutions
+                    }));
+            } catch (e) {
+                console.error('Get diagnosis error:', e);
+                return [];
+            }
+        }
+
+        getMetaReasoning() {
+            try {
+                const topIssue = Object.entries(this.state.probabilities).reduce((a, b) => a[1] > b[1] ? a : b)[0];
+                const personaDebate = this.state.currentPersona === 'all' ? ['hardware', 'os', 'network', 'forensics'].map(persona => {
+                    const personaProb = Object.entries(this.state.probabilities)
+                        .filter(([issue]) => KnowledgeBase.issues[issue].persona === persona)
+                        .reduce((sum, [, prob]) => sum + prob, 0);
+                    return `${persona}: ${(personaProb * 100).toFixed(1)}% confidence in ${topIssue.replace('_', ' ')}.`;
+                }).join('\n') : '';
+                return `Hypothesis: ${topIssue.replace('_', ' ')} (P=${(this.state.probabilities[topIssue] * 100).toFixed(1)}%). 
+                        Persona: ${this.state.currentPersona}. 
+                        Recent answers: ${this.state.history.slice(-2).map(h => h.question).join(', ')}. 
+                        Symptoms: ${this.state.history.flatMap(h => h.symptoms || []).join(', ')}. 
+                        Confidence: ${this.state.probabilities[topIssue] > this.state.confidenceThreshold ? 'High' : 'Moderate'}.
+                        ${personaDebate}`;
+            } catch (e) {
+                console.error('Get meta reasoning error:', e);
+                return 'Error generating meta reasoning.';
+            }
+        }
+
+        confirmDiagnosis(issue) {
+            try {
+                this.state.history.push({ diagnosis: issue, confirmed: true });
+                this.applyLearning();
+                this.saveHistory();
+            } catch (e) {
+                console.error('Confirm diagnosis error:', e);
+            }
+        }
+
+        rejectDiagnosis() {
+            try {
+                this.state.history.push({ diagnosis: null, confirmed: false });
+                this.saveHistory();
+            } catch (e) {
+                console.error('Reject diagnosis error:', e);
+            }
+        }
+
+        pruneDecisionTree() {
+            try {
+                const highConfidenceIssues = Object.entries(this.state.probabilities)
+                    .filter(([_, prob]) => prob > this.state.confidenceThreshold)
+                    .map(([issue]) => issue);
+                if (highConfidenceIssues.length) {
+                    Object.keys(KnowledgeBase.questions).forEach(qId => {
+                        const q = KnowledgeBase.questions[qId];
+                        if (!highConfidenceIssues.some(issue => q.options && Object.values(q.options).some(opt => opt.updates[issue]))) {
+                            delete KnowledgeBase.questions[qId];
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error('Prune decision tree error:', e);
+            }
+        }
+    }
+
+    // UI Manager
+    class UIManager {
+        constructor(cde) {
+            this.cde = cde;
+            this.elements = {
+                questionContainer: document.getElementById('questionContainer'),
+                questionText: document.getElementById('questionText'),
+                reasoningText: document.getElementById('reasoningText'),
+                optionsContainer: document.getElementById('optionsContainer'),
+                clarificationContainer: document.getElementById('clarificationContainer'),
+                clarificationText: document.getElementById('clarificationText'),
+                clarificationInput: document.getElementById('clarificationInput'),
+                submitClarification: document.getElementById('submitClarification'),
+                timelineContainer: document.getElementById('timelineContainer'),
+                timeline: document.getElementById('timeline'),
+                diagnosisContainer: document.getElementById('diagnosisContainer'),
+                diagnosisText: document.getElementById('diagnosisText'),
+                diagnosisReasoning: document.getElementById('diagnosisReasoning'),
+                exportButton: document.getElementById('exportButton'),
+                restartButton: document.getElementById('restartButton'),
+                personaSelect: document.getElementById('personaSelect'),
+                themeToggle: document.getElementById('themeToggle'),
+                rtlToggle: document.getElementById('rtlToggle'),
+                zenModeToggle: document.getElementById('zenModeToggle'),
+                sandboxModeToggle: document.getElementById('sandboxModeToggle'),
+                metaModeContainer: document.getElementById('metaModeContainer'),
+                metaReasoning: document.getElementById('metaReasoning'),
+                whatIfContainer: document.getElementById('whatIfContainer'),
+                whatIfOptions: document.getElementById('whatIfOptions'),
+                loader: document.getElementById('loader'),
+                tooltip: document.getElementById('tooltip'),
+                deviceStatus: document.getElementById('deviceStatus'),
+                deviceInfo: document.getElementById('deviceInfo'),
+                logicTreeContainer: document.getElementById('logicTreeContainer'),
+                logicTree: document.getElementById('logicTree'),
+                hypothesisContainer: document.getElementById('hypothesisContainer'),
+                hypothesisList: document.getElementById('hypothesisList'),
+                sandboxContainer: document.getElementById('sandboxContainer'),
+                sandboxFault: document.getElementById('sandboxFault'),
+                runSandbox: document.getElementById('runSandbox'),
+                sandboxResult: document.getElementById('sandboxResult'),
+                confirmDiagnosis: document.getElementById('confirmDiagnosis'),
+                rejectDiagnosis: document.getElementById('rejectDiagnosis'),
+                devConsole: document.getElementById('devConsole')
+            };
+            this.isZenMode = false;
+            this.isSandboxMode = false;
+            this.devConsoleActive = false;
+            this.bindEvents();
+            this.updateDeviceStatus();
+        }
+
+        bindEvents() {
+            try {
+                this.elements.themeToggle.addEventListener('click', () => {
+                    document.body.classList.toggle('dark');
+                    localStorage.setItem('theme', document.body.classList.contains('dark') ? 'dark' : 'light');
+                });
+
+                this.elements.rtlToggle.addEventListener('click', () => {
+                    const isRtl = document.documentElement.getAttribute('dir') === 'rtl';
+                    document.documentElement.setAttribute('dir', isRtl ? 'ltr' : 'rtl');
+                    this.elements.rtlToggle.textContent = isRtl ? 'RTL' : 'LTR';
+                });
+
+                this.elements.zenModeToggle.addEventListener('click', () => {
+                    this.isZenMode = !this.isZenMode;
+                    document.body.classList.toggle('zen-mode', this.isZenMode);
+                    this.elements.zenModeToggle.textContent = this.isZenMode ? 'Exit Zen' : 'Zen';
+                    this.elements.logicTreeContainer.classList.toggle('hidden', !this.isZenMode);
+                    this.renderLogicTree();
+                });
+
+                this.elements.sandboxModeToggle.addEventListener('click', () => {
+                    this.isSandboxMode = !this.isSandboxMode;
+                    this.cde.state.sandboxMode = this.isSandboxMode;
+                    this.elements.sandboxContainer.classList.toggle('hidden', !this.isSandboxMode);
+                    this.elements.sandboxModeToggle.textContent = this.isSandboxMode ? 'Exit Sandbox' : 'Sandbox';
+                    if (this.isSandboxMode) this.cde.reset();
+                    this.displayQuestion();
+                });
+
+                this.elements.personaSelect.addEventListener('change', () => {
+                    this.cde.state.currentPersona = this.elements.personaSelect.value;
+                    this.cde.state.currentQuestion = this.cde.selectNextQuestion();
+                    this.displayQuestion();
+                    this.updateTimeline();
+                });
+
+                this.elements.exportButton.addEventListener('click', () => {
+                    const sessionData = {
+                        timestamp: new Date().toISOString(),
+                        history: this.cde.state.history,
+                        probabilities: this.cde.state.probabilities,
+                        persona: this.cde.state.currentPersona
+                    };
+                    const blob = new Blob([JSON.stringify(sessionData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `lam_session_${sessionData.timestamp}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+
+                this.elements.restartButton.addEventListener('click', () => {
+                    this.cde.reset();
+                    this.elements.questionContainer.classList.remove('hidden');
+                    this.elements.diagnosisContainer.classList.add('hidden');
+                    this.elements.metaModeContainer.classList.add('hidden');
+                    this.elements.whatIfOptions.innerHTML = '';
+                    this.displayQuestion();
+                    this.updateTimeline();
+                    this.renderLogicTree();
+                });
+
+                this.elements.runSandbox.addEventListener('click', () => {
+                    const fault = this.elements.sandboxFault.value;
+                    if (fault) {
+                        this.runSandboxSimulation(fault);
+                    }
+                });
+
+                this.elements.confirmDiagnosis.addEventListener('click', () => {
+                    const topIssue = this.cde.getDiagnosis()[0]?.issue.replace(' ', '_');
+                    if (topIssue) {
+                        this.cde.confirmDiagnosis(topIssue);
+                        this.elements.diagnosisContainer.classList.add('hidden');
+                        this.cde.reset();
+                        this.displayQuestion();
+                    }
+                });
+
+                this.elements.rejectDiagnosis.addEventListener('click', () => {
+                    this.cde.rejectDiagnosis();
+                    this.elements.diagnosisContainer.classList.add('hidden');
+                    this.cde.reset();
+                    this.displayQuestion();
+                });
+
+                document.addEventListener('keydown', e => {
+                    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+                        this.toggleDevConsole();
+                    }
+                    if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+                        this.testMatrix.runTests();
+                    }
+                });
+            } catch (e) {
+                console.error('Bind events error:', e);
+            }
+        }
+
+        displayQuestion() {
+            try {
+                if (!this.cde.state.currentQuestion) {
+                    this.showDiagnosis();
+                    return;
+                }
+                const q = KnowledgeBase.questions[this.cde.state.currentQuestion];
+                this.elements.questionText.textContent = q.text;
+                this.elements.reasoningText.textContent = q.reasoning;
+                this.elements.optionsContainer.innerHTML = '';
+                this.elements.clarificationContainer.classList.add('hidden');
+                this.elements.hypothesisContainer.classList.toggle('hidden', !this.cde.state.hypotheses.length);
+                this.elements.hypothesisList.innerHTML = this.cde.state.hypotheses.map(h => `<li>${h.issue}: ${h.implications.join(', ')}</li>`).join('');
+                if (q.options) {
+                    for (const [option, data] of Object.entries(q.options)) {
+                        const button = document.createElement('button');
+                        button.textContent = option.charAt(0).toUpperCase() + option.slice(1);
+                        button.className = 'w-full px-4 py-2 bg-blue-600 text-white rounded micro-interaction';
+                        button.dataset.tooltip = `Confidence: ${data.confidence * 100}%`;
+                        button.addEventListener('mouseover', e => this.showTooltip(e, button.dataset.tooltip));
+                        button.addEventListener('mouseout', this.hideTooltip);
+                        button.addEventListener('click', () => {
+                            this.elements.loader.classList.remove('hidden');
+                            setTimeout(() => {
+                                try {
+                                    this.cde.updateProbabilities(data.updates, data.confidence);
+                                    this.cde.state.history.push({
+                                        questionId: this.cde.state.currentQuestion,
+                                        question: q.text,
+                                        answer: option,
+                                        symptoms: Object.keys(data.updates),
+                                        probabilities: { ...this.cde.state.probabilities }
+                                    });
+                                    this.cde.saveHistory();
+                                    if (data.clarification) {
+                                        this.showClarification(data.clarification);
+                                    } else {
+                                        this.cde.state.currentQuestion = data.next || this.cde.selectNextQuestion();
+                                        this.displayQuestion();
+                                    }
+                                    this.updateTimeline();
+                                    this.renderLogicTree();
+                                    this.elements.loader.classList.add('hidden');
+                                } catch (e) {
+                                    console.error('Option click error:', e);
+                                    this.elements.loader.classList.add('hidden');
+                                }
+                            }, 300);
+                        });
+                        this.elements.optionsContainer.appendChild(button);
+                    }
+                }
+                this.elements.questionContainer.classList.add('animate-slide-in');
+            } catch (e) {
+                console.error('Display question error:', e);
+            }
+        }
+
+        showClarification(clarificationId) {
+            try {
+                const q = KnowledgeBase.questions[clarificationId];
+                this.elements.clarificationText.textContent = q.text;
+                this.elements.clarificationContainer.classList.remove('hidden');
+                this.elements.optionsContainer.classList.add('hidden');
+                this.elements.submitClarification.addEventListener('click', () => {
+                    const input = this.elements.clarificationInput.value;
+                    try {
+                        const { next, updates, confidence } = this.cde.parseFuzzyInput(input, clarificationId);
+                        this.cde.updateProbabilities(updates, confidence);
+                        this.cde.state.history.push({
+                            questionId: clarificationId,
+                            question: q.text,
+                            answer: input,
+                            symptoms: Object.keys(updates),
+                            probabilities: { ...this.cde.state.probabilities }
+                        });
+                        this.cde.saveHistory();
+                        this.cde.state.currentQuestion = next || this.cde.selectNextQuestion();
+                        this.elements.clarificationContainer.classList.add('hidden');
+                        this.elements.optionsContainer.classList.remove('hidden');
+                        this.displayQuestion();
+                        this.updateTimeline();
+                        this.renderLogicTree();
+                    } catch (e) {
+                        console.error('Submit clarification error:', e);
+                    }
+                }, { once: true });
+            } catch (e) {
+                console.error('Show clarification error:', e);
+            }
+        }
+
+        updateTimeline() {
+            try {
+                this.elements.timeline.innerHTML = '';
+                this.cde.state.history.forEach((entry, index) => {
+                    const isPivot = this.isPivotQuestion(entry);
+                    const div = document.createElement('div');
+                    div.className = `timeline-item ${isPivot ? 'pivot' : ''}`;
+                    div.innerHTML = `
+                        <div class="timeline-dot"></div>
+                        <p class="text-sm"><strong>Q${index + 1}:</strong> ${entry.question}</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Answer: ${entry.answer}</p>
+                    `;
+                    div.dataset.tooltip = `Probability impact: ${Object.entries(entry.probabilities)
+                        .filter(([_, p]) => p > 0.1)
+                        .map(([issue, p]) => `${issue.replace('_', ' ')}: ${(p * 100).toFixed(1)}%`)
+                        .join(', ')}`;
+                    div.addEventListener('mouseover', e => this.showTooltip(e, div.dataset.tooltip));
+                    div.addEventListener('mouseout', this.hideTooltip);
+                    div.addEventListener('click', () => this.rewindTo(index));
+                    this.elements.timeline.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Update timeline error:', e);
+            }
+        }
+
+        isPivotQuestion(entry) {
+            try {
+                const prevProbs = this.cde.state.history[this.cde.state.history.indexOf(entry) - 1]?.probabilities || {};
+                return Object.entries(entry.probabilities).some(([issue, prob]) => {
+                    const delta = Math.abs(prob - (prevProbs[issue] || 0));
+                    return delta > 0.2;
+                });
+            } catch (e) {
+                console.error('Is pivot question error:', e);
+                return false;
+            }
+        }
+
+        rewindTo(index) {
+            try {
+                const tempHistory = [...this.cde.state.history];
+                this.cde.state.history = tempHistory.slice(0, index);
+                this.cde.state.probabilities = { ...tempHistory[index].probabilities };
+                this.cde.state.currentQuestion = tempHistory[index].questionId;
+                this.elements.diagnosisContainer.classList.add('hidden');
+                this.elements.questionContainer.classList.remove('hidden');
+                this.displayQuestion();
+                this.updateTimeline();
+                this.renderLogicTree();
+            } catch (e) {
+                console.error('Rewind to error:', e);
+            }
+        }
+
+        showDiagnosis() {
+            try {
+                this.elements.questionContainer.classList.add('hidden');
+                this.elements.diagnosisContainer.classList.remove('hidden');
+                const diagnoses = this.cde.getDiagnosis();
+                this.elements.diagnosisText.innerHTML = diagnoses.map(d => `
+                    <strong>${d.probability}% chance of ${d.issue}</strong><br>
+                    Recommended solutions: ${d.solutions.join(', ')}
+                `).join('<br><br>');
+                this.elements.diagnosisReasoning.textContent = diagnoses.map(d => d.reasoning).join(' ');
+                this.updateWhatIfOptions();
+            } catch (e) {
+                console.error('Show diagnosis error:', e);
+            }
+        }
+
+        updateWhatIfOptions() {
+            try {
+                this.elements.whatIfOptions.innerHTML = '';
+                this.cde.state.history.forEach((entry, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-2';
+                    div.innerHTML = `
+                        <span class="text-sm">Q${index + 1}: ${entry.question}</span>
+                        <button class="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded micro-interaction">Change</button>
+                    `;
+                    div.querySelector('button').addEventListener('click', () => this.rewindTo(index));
+                    this.elements.whatIfOptions.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Update what-if options error:', e);
+            }
+        }
+
+        showTooltip(event, text) {
+            try {
+                this.elements.tooltip.textContent = text;
+                this.elements.tooltip.style.left = `${event.pageX + 10}px`;
+                this.elements.tooltip.style.top = `${event.pageY + 10}px`;
+                this.elements.tooltip.classList.add('show');
+            } catch (e) {
+                console.error('Show tooltip error:', e);
+            }
+        }
+
+        hideTooltip() {
+            try {
+                this.elements.tooltip.classList.remove('show');
+            } catch (e) {
+                console.error('Hide tooltip error:', e);
+            }
+        }
+
+        updateDeviceStatus() {
+            try {
+                let info = [];
+                if (navigator.hardwareConcurrency) info.push(`CPU Threads: ${navigator.hardwareConcurrency}`);
+                if (navigator.deviceMemory) info.push(`Memory: ${navigator.deviceMemory}GB`);
+                if (navigator.userAgentData) {
+                    navigator.userAgentData.getHighEntropyValues(['platform', 'platformVersion']).then(data => {
+                        info.push(`OS: ${data.platform} ${data.platformVersion}`);
+                        this.elements.deviceInfo.textContent = info.join(' | ');
+                    });
+                }
+                if (navigator.userAgent) info.push(`Browser: ${navigator.userAgent.match(/\(([^)]+)\)/)[1]}`);
+                if (window.performance && window.performance.memory) {
+                    const memory = window.performance.memory;
+                    info.push(`Used JS Heap: ${(memory.usedJSHeapSize / 1048576).toFixed(1)}MB`);
+                }
+                if (navigator.onLine) info.push(`Network: ${navigator.onLine ? 'Online' : 'Offline'}`);
+                if (navigator.getBattery) {
+                    navigator.getBattery().then(battery => {
+                        info.push(`Battery: ${Math.round(battery.level * 100)}% ${battery.charging ? '(Charging)' : ''}`);
+                        this.elements.deviceInfo.textContent = info.join(' | ');
+                    });
+                }
+                if (info.length) {
+                    this.elements.deviceStatus.classList.remove('hidden');
+                    this.elements.deviceInfo.textContent = info.join(' | ');
+                }
+            } catch (e) {
+                console.error('Update device status error:', e);
+            }
+        }
+
+        renderLogicTree() {
+            try {
+                if (!this.isZenMode) return;
+                const svg = this.elements.logicTree;
+                svg.innerHTML = '';
+                const width = svg.clientWidth;
+                const height = 200;
+                let x = 50, y = height / 2;
+                this.cde.state.history.forEach((entry, index) => {
+                    const path = `M${x} ${y} L${x + 50} ${y + (index % 2 ? 20 : -20)}`;
+                    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    pathEl.setAttribute('d', path);
+                    pathEl.classList.add('logic-tree', 'animate-grow-path');
+                    svg.appendChild(pathEl);
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', x + 50);
+                    circle.setAttribute('cy', y + (index % 2 ? 20 : -20));
+                    circle.setAttribute('r', '5');
+                    circle.setAttribute('fill', this.isPivotQuestion(entry) ? '#ef4444' : '#3b82f6');
+                    svg.appendChild(circle);
+                    x += 50;
+                    y += index % 2 ? 20 : -20;
+                });
+            } catch (e) {
+                console.error('Render logic tree error:', e);
+            }
+        }
+
+        runSandboxSimulation(fault) {
+            try {
+                this.cde.reset();
+                const issue = KnowledgeBase.issues[fault];
+                if (!issue) {
+                    this.elements.sandboxResult.textContent = 'Invalid fault selected.';
+                    return;
+                }
+                const simulationPath = issue.questions.map(qId => {
+                    const q = KnowledgeBase.questions[qId];
+                    const option = Object.entries(q.options).find(([_, opt]) => opt.updates[fault])?.[0] || 'no';
+                    return {
+                        questionId: qId,
+                        question: q.text,
+                        answer: option,
+                        symptoms: Object.keys(q.options[option].updates || {}),
+                        probabilities: { ...this.cde.state.probabilities }
+                    };
+                });
+                this.cde.state.history = simulationPath;
+                this.cde.updateProbabilities(
+                    issue.symptoms.reduce((acc, s) => ({ ...acc, [fault]: 0.9 }), {}),
+                    0.95
+                );
+                this.cde.saveHistory();
+                this.elements.sandboxResult.textContent = `Simulated ${fault.replace('_', ' ')}: Diagnosis probability = ${(this.cde.state.probabilities[fault] * 100).toFixed(1)}%`;
+                this.updateTimeline();
+                this.showDiagnosis();
+                this.renderLogicTree();
+            } catch (e) {
+                console.error('Run sandbox simulation error:', e);
+            }
+        }
+
+        toggleDevConsole() {
+            try {
+                this.devConsoleActive = !this.devConsoleActive;
+                this.elements.devConsole.classList.toggle('hidden', !this.devConsoleActive);
+                if (this.devConsoleActive) {
+                    this.elements.devConsole.innerHTML = `
+                        <h3 class="text-lg font-semibold mb-2">Developer Console</h3>
+                        <p>Current State:</p>
+                        <pre>${JSON.stringify(this.cde.state, null, 2)}</pre>
+                        <div class="flex gap-2">
+                            <button id="exportState" class="px-4 py-2 bg-blue-600 text-white rounded micro-interaction">Export State</button>
+                            <button id="runTests" class="px-4 py-1 bg-green-600 text-white rounded micro-interaction">Run Test Matrix</button>
+                        </div>
+                    `;
+                    this.elements.devConsole.querySelector('#exportState').addEventListener('click', () => {
+                        const blob = new Blob([JSON.stringify(this.cde.state, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'lam_state.json';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    });
+                    this.elements.devConsole.querySelector('#runTests').addEventListener('click', () => {
+                        this.testMatrix.runTests();
+                    });
+                }
+            } catch (e) {
+                console.error('Toggle dev console error:', e);
+            }
+        }
+    }
+    // Test Matrix
+    class TestMatrix {
+        constructor(cde) {
+            this.cde = cde;
+            this.testCases = [];
+            this.results = [];
+        }
+
+            generateTestCases() {
+                for (let i = 0; i < 1000; i++) {
+                    const issue = Object.keys(KnowledgeBase.issues)[Math.floor(Math.random() * Object.keys(KnowledgeBase.issues).length)];
+                    const symptoms = KnowledgeBase.issues[issue].symptoms;
+                    this.testCases.push({ issue, symptoms });
+                }
+            }
+
+            runTests() {
+                this.results = [];
+                this.testCases.forEach(({ issue, symptoms }) => {
+                    this.cde.reset();
+                    symptoms.forEach(s => {
+                        const q = Object.values(KnowledgeBase.questions).find(q => 
+                            q.options && Object.values(q.options).some(opt => 
+                                Object.keys(opt.updates).includes(issue) && opt.updates[issue] > 0.3
+                            )
+                        );
+                        if (q) {
+                            const option = Object.entries(q.options).find(([_, opt]) => 
+                                opt.updates[issue] > 0.3
+                            )?.[0];
+                            if (option) {
+                                this.cde.updateProbabilities(q.options[option].updates, q.options[option].confidence);
+                                this.cde.state.history.push({
+                                    questionId: q.id,
+                                    question: q.text,
+                                    answer: option,
+                                    symptoms: [s],
+                                    probabilities: { ...this.cde.state.probabilities }
+                                });
+                            }
+                        }
+                    });
+                    const diagnosis = this.cde.getDiagnosis();
+                    const topIssue = diagnosis[0]?.issue.replace(' ', '_');
+                    const isCorrect = topIssue === issue;
+                    this.results.push({
+                        issue,
+                        diagnosed: topIssue,
+                        probability: diagnosis[0]?.probability || 0,
+                        isCorrect,
+                        symptoms
+                    });
+                    this.cde.saveHistory();
+                });
+                this.logTestResults();
+            }
+
+            logTestResults() {
+                const reliability = this.results.reduce((acc, { isCorrect }) => acc + (isCorrect ? 1 : 0), 0) / this.results.length * 100;
+                const personaScores = ['hardware', 'os', 'network', 'forensics'].reduce((acc, persona) => {
+                    const personaResults = this.results.filter(r => KnowledgeBase.issues[r.issue].persona === persona);
+                    const score = personaResults.length ? 
+                        personaResults.reduce((sum, r) => sum + (r.isCorrect ? 1 : 0), 0) / personaResults.length * 100 : 0;
+                    return { ...acc, [persona]: score.toFixed(1) };
+                }, {});
+                console.log(`Test Matrix Results: Overall Reliability = ${reliability.toFixed(1)}%`);
+                console.log('Persona Scores:', personaScores);
+                if (this.devConsoleActive) {
+                    this.elements.devConsole.innerHTML += `
+                        <h4 class="text-md font-semibold mt-4">Test Matrix Results</h4>
+                        <p>Reliability: ${reliability.toFixed(1)}%</p>
+                        <pre>${JSON.stringify(personaScores, null, 2)}</pre>
+                    `;
+                }
+            }
+        }
+
+        // Utility Functions
+        const randomChoice = arr => arr[Math.floor(Math.random() * arr.length)];
+
+        // Main Initialization
+        class LamDiagnostic {
+            constructor() {
+                this.cde = new CDE();
+                this.ui = new UIManager(this.cde);
+                this.testMatrix = new TestMatrix(this.cde);
+                this.init();
+            }
+
+            init() {
+                try {
+                    this.cde.initialize();
+                    this.ui.displayQuestion();
+                    this.ui.updateTimeline();
+                    this.testMatrix.generateTestCases();
+                    if (localStorage.getItem('theme') === 'dark') {
+                        document.body.classList.add('dark');
+                    }
+                    // Run tests in background if dev console is active
+                    document.addEventListener('keydown', e => {
+                        if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+                            this.testMatrix.runTests();
+                        }
+                    });
+                } catch (e) {
+                    console.error('Initialization error:', e);
+                    this.ui.elements.questionContainer.innerHTML = '<p class="text-red-600">Error loading diagnostic tool. Please check the console for details.</p>';
+                }
+            }
+        }
+
+        // Additional UIManager Methods (Finalizing Incomplete Features)
+        UIManager.prototype.renderLogicTree = function() {
+            if (!this.isZenMode) return;
+            const svg = this.elements.logicTree;
+            svg.innerHTML = '';
+            const width = svg.clientWidth;
+            const height = svg.clientHeight;
+            let x = 50, y = height / 2;
+            this.cde.state.history.forEach((entry, index) => {
+                const path = `M${x} ${y} L${x + 50} ${y + (index % 2 ? 20 : -20)}`;
+                const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                pathEl.setAttribute('d', path);
+                pathEl.classList.add('logic-tree', 'animate-grow-path');
+                svg.appendChild(pathEl);
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', x + 50);
+                circle.setAttribute('cy', y + (index % 2 ? 20 : -20));
+                circle.setAttribute('r', '5');
+                circle.setAttribute('fill', this.isPivotQuestion(entry) ? '#ef4444' : '#3b82f6');
+                svg.appendChild(circle);
+                x += 50;
+                y += index % 2 ? 20 : -20;
+            });
+        };
+
+        UIManager.prototype.toggleDevConsole = function() {
+            this.devConsoleActive = !this.devConsoleActive;
+            this.elements.devConsole.classList.toggle('hidden', !this.devConsoleActive);
+            if (this.devConsoleActive) {
+                this.elements.devConsole.innerHTML = `
+                    <h3 class="text-lg font-semibold mb-2">Developer Console</h3>
+                    <p>Current State:</p>
+                    <pre>${JSON.stringify(this.cde.state, null, 2)}</pre>
+                    <div class="flex gap-2">
+                        <button class="px-4 py-2 bg-blue-600 text-white rounded micro-interaction" id="exportState">Export State</button>
+                        <button class="px-4 py-2 bg-green-600 text-white rounded micro-interaction" id="runTests">Run Test Matrix</button>
+                    </div>
+                `;
+                this.elements.devConsole.querySelector('#exportState').addEventListener('click', () => {
+                    const blob = new Blob([JSON.stringify(this.cde.state, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'lam_state.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+                this.elements.devConsole.querySelector('#runTests').addEventListener('click', () => {
+                    this.testMatrix.runTests();
+                });
+            }
+        };
+
+        UIManager.prototype.updateWhatIfOptions = function() {
+            this.elements.whatIfOptions.innerHTML = '';
+            this.cde.state.history.forEach((entry, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2';
+                div.innerHTML = `
+                    <span class="text-sm">Q${index + 1}: ${entry.question}</span>
+                    <button class="px-2 py-1 bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded micro-interaction">Change</button>
+                `;
+                div.querySelector('button').addEventListener('click', () => {
+                    this.rewindTo(index);
+                });
+                this.elements.whatIfOptions.appendChild(div);
+            });
+        };
+
+        UIManager.prototype.runSandboxSimulation = function(fault) {
+            this.cde.reset();
+            const issue = KnowledgeBase.issues[fault];
+            if (!issue) {
+                this.elements.sandboxResult.textContent = 'Invalid fault selected.';
+                return;
+            }
+            const simulationPath = issue.questions.map(qId => {
+                const q = KnowledgeBase.questions[qId];
+                const option = Object.entries(q.options).find(([_, opt]) => opt.updates[fault])?.[0] || 'no';
+                return {
+                    questionId: qId,
+                    question: q.text,
+                    answer: option,
+                    symptoms: Object.keys(q.options[option].updates || {}),
+                    probabilities: { ...this.cde.state.probabilities }
+                };
+            });
+            this.cde.state.history = simulationPath;
+            this.cde.updateProbabilities(
+                issue.symptoms.reduce((acc, s) => ({ ...acc, [fault]: 0.9 }), {}),
+                0.95
+            );
+            this.cde.saveHistory();
+            this.elements.sandboxResult.textContent = `Simulated ${fault.replace('_', ' ')}: Diagnosis probability = ${(this.cde.state.probabilities[fault] * 100).toFixed(1)}%`;
+            this.updateTimeline();
+            this.showDiagnosis();
+            this.renderLogicTree();
+        };
+
+        // Finalize CDE Methods
+        CDE.prototype.pruneDecisionTree = function() {
+            const highConfidenceIssues = Object.entries(this.state.probabilities)
+                .filter(([_, prob]) => prob > this.state.confidenceThreshold)
+                .map(([issue]) => issue);
+            if (highConfidenceIssues.length) {
+                Object.keys(KnowledgeBase.questions).forEach(qId => {
+                    const q = KnowledgeBase.questions[qId];
+                    if (!highConfidenceIssues.some(issue => q.options && Object.values(q.options).some(opt => opt.updates[issue]))) {
+                        delete KnowledgeBase.questions[qId];
+                    }
+                });
+            }
+        };
+
+        // Start Application
+        const lam = new LamDiagnostic();
+    </script>
