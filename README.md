@@ -96,7 +96,7 @@ No installation needed. Just open `index.html` in your browser.
 
 ---
 
-## 🧑‍💻 Made by [Your Name]  
+## 🧑‍💻 Made by Omar 
 Inspired by the genius of cognitive systems, cyber forensics, and human intuition.
 
 ---
